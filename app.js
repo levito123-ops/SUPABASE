@@ -1,140 +1,240 @@
 import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js/+esm'
 
-// 1. Configuración de tus credenciales reales de tu proyecto lsyvtohbhrgzmqtvuqop
+// Configuración de tu proyecto lsyvtohbhrgzmqtvuqop
 const supabaseUrl = 'https://lsyvtohbhrgzmqtvuqop.supabase.co'
 const supabaseAnonKey = 'sb_publishable_Mx1ZMCY26g7i2lbxyrasIQ_Bic7PtjS'
 const supabase = createClient(supabaseUrl, supabaseAnonKey)
 
-// Captura de elementos del DOM (HTML)
-const selectGrado = document.getElementById('grado_academico')
-const selectEnfermedad = document.getElementById('enfermedad_preexistente')
-const formulario = document.getElementById('pacienteForm')
+// Captura de elementos del DOM
+const selectEspecie = document.getElementById('especie_id')
+const selectRaza = document.getElementById('raza_id')
+const selectAtencion = document.getElementById('tipo_atencion_id')
+const selectCondicion = document.getElementById('condicion_medica_id')
+const filtroEspecie = document.getElementById('filtroEspecie')
+const tablaBody = document.getElementById('tablaMascotasBody')
+const formulario = document.getElementById('mascotaForm')
 const mensajeAlerta = document.getElementById('mensajeAlerta')
 
-// Función utilitaria para mostrar alertas en pantalla
-function mostrarAlerta(texto, tipo) {
+// Variable global para almacenar las mascotas temporalmente para el filtro
+let listaMascotasGlobal = []
+
+// Función para lanzar mensajes dinámicos en pantalla
+function lanzarAlerta(texto, tipo) {
     mensajeAlerta.innerText = texto
     mensajeAlerta.className = `message ${tipo}`
     mensajeAlerta.style.display = 'block'
+    window.scrollTo({ top: 0, behavior: 'smooth' })
 }
 
-// 2. CARGA DINÁMICA: Descargar datos de Supabase al abrir la página
-async function cargarCatalogos() {
+// 1. Cargar selects de forma dinámica desde las tablas catálogo obligatorias
+async function iniciarCatalogos() {
     try {
-        // Consultar grados académicos activos
-        const { data: grados, error: errGrados } = await supabase
-            .from('grados_academicos')
-            .select('id, nombre')
-            .eq('activo', true)
+        const { data: especies, error: errE } = await supabase.from('especies').select('id, nombre').eq('activo', true)
+        const { data: razas, error: errR } = await supabase.from('razas').select('id, nombre').eq('activo', true)
+        const { data: atenciones, error: errA } = await supabase.from('tipos_atencion').select('id, nombre')
+        const { data: condiciones, error: errC } = await supabase.from('condiciones_medicas').select('id, nombre')
 
-        // Consultar enfermedades activas
-        const { data: enfermedades, error: errEnfermedades } = await supabase
-            .from('enfermedades_preexistentes')
-            .select('id, nombre')
-            .eq('activo', true)
+        if (errE || errR || errA || errC) throw new Error("Error cargando catálogos obligatorios.")
 
-        if (errGrados || errEnfermedades) throw new Error("Error al obtener catálogos")
+        // Llenar Formulario - Especies
+        selectEspecie.innerHTML = '<option value="">Seleccione Especie...</option>'
+        especies.forEach(e => { selectEspecie.innerHTML += `<option value="${e.id}">${e.nombre}</option>` })
 
-        // Rellenar Select de Grados Académicos
-        selectGrado.innerHTML = '<option value="">Seleccione Grado...</option>'
-        grados.forEach(g => {
-            selectGrado.innerHTML += `<option value="${g.id}">${g.nombre}</option>`
-        })
+        // Llenar Filtro - Especies (Rúbrica Examen)
+        filtroEspecie.innerHTML = '<option value="TODOS">Mostrar todos</option>'
+        especies.forEach(e => { filtroEspecie.innerHTML += `<option value="${e.id}">${e.nombre}</option>` })
 
-        // Rellenar Select de Enfermedades
-        selectEnfermedad.innerHTML = '<option value="">Seleccione Enfermedad...</option>'
-        enfermedades.forEach(e => {
-            selectEnfermedad.innerHTML += `<option value="${e.id}">${e.nombre}</option>`
-        })
+        // Llenar Formulario - Razas
+        selectRaza.innerHTML = '<option value="">Seleccione Raza...</option>'
+        razas.forEach(r => { selectRaza.innerHTML += `<option value="${r.id}">${r.nombre}</option>` })
 
-    } catch (error) {
-        console.error(error)
-        mostrarAlerta("Error al cargar los catálogos desde Supabase.", "error")
+        // Llenar Formulario - Tipos de atención
+        selectAtencion.innerHTML = '<option value="">Seleccione Atención...</option>'
+        atenciones.forEach(a => { selectAtencion.innerHTML += `<option value="${a.id}">${a.nombre}</option>` })
+
+        // Llenar Formulario - Condiciones médicas
+        selectCondicion.innerHTML = '<option value="">Seleccione Condición...</option>'
+        condiciones.forEach(c => { selectCondicion.innerHTML += `<option value="${c.id}">${c.nombre}</option>` })
+
+    } catch (err) {
+        console.error(err)
+        lanzarAlerta("Error al enlazar los catálogos de Supabase.", "error")
     }
 }
 
-// Ejecutar carga de catálogos inmediatamente
-cargarCatalogos()
+// 2. Traer registros y renderizarlos mostrando nombres de texto en lugar de IDs numéricos
+async function cargarListadoMascotas() {
+    try {
+        // Hacemos el GET relacionando los nombres de los catálogos en una sola consulta
+        const { data: mascotas, error } = await supabase
+            .from('mascotas')
+            .select(`
+                id, nombre_mascota, edad_mascota, peso, nombre_dueno, apellido_dueno, dni_dueno, celular, correo, observaciones,
+                especies (nombre),
+                razas (nombre),
+                tipos_atencion (nombre),
+                condiciones_medicas (nombre)
+            `)
+            .order('created_at', { ascending: false })
 
-// 3. REGISTRO Y VALIDACIONES
-formulario.addEventListener('submit', async (e) => {
-    e.preventDefault() // Evitar que la página se recargue
-    mensajeAlerta.style.display = 'none' // Ocultar alertas previas
+        if (error) throw error
 
-    // Obtener los valores ingresados por el usuario
-    const nombres = document.getElementById('nombres').value.trim()
-    const apellidos = document.getElementById('apellidos').value.trim()
-    const dni = document.getElementById('dni').value.trim()
-    const fecha_nacimiento = document.getElementById('fecha_nacimiento').value
-    const edad = document.getElementById('edad').value
-    const sexo = document.getElementById('sexo').value
-    const celular = document.getElementById('celular').value.trim()
-    const correo = document.getElementById('correo').value.trim()
-    const direccion = document.getElementById('direccion').value.trim()
-    const distrito = document.getElementById('distrito').value.trim()
-    const estado_civil = document.getElementById('estado_civil').value
-    const grado_academico_id = selectGrado.value
-    const enfermedad_preexistente_id = selectEnfermedad.value
-    const cuenta_seguro = document.getElementById('cuenta_seguro').value === 'true'
-    const tipo_seguro = document.getElementById('tipo_seguro').value.trim()
-    const observaciones = document.getElementById('observaciones').value.trim()
+        listaMascotasGlobal = mascotas
+        renderizarTabla(mascotas)
 
-    // --- REQUISITOS DE VALIDACIÓN ---
-    
-    // No enviar formulario vacío / Campos obligatorios no vacíos
-    if (!nombres || !apellidos || !dni || !celular || !correo) {
-        mostrarAlerta("Por favor, rellene todos los campos obligatorios (*).", "error")
-        return
+    } catch (err) {
+        console.error(err)
+        tablaBody.innerHTML = `<tr><td colspan="10" style="text-align: center; color: #991b1b;">Error al leer los datos de mascotas.</td></tr>`
     }
-    // DNI debe tener exactamente 8 dígitos numéricos
-    if (dni.length !== 8 || isNaN(dni)) {
-        mostrarAlerta("El DNI debe tener exactamente 8 dígitos.", "error")
-        return
-    }
-    // Celular debe tener como mínimo 9 dígitos
-    if (celular.length < 9 || isNaN(celular)) {
-        mostrarAlerta("El celular debe tener como mínimo 9 dígitos.", "error")
-        return
-    }
-    // Formato de correo electrónico válido
-    const expresionCorreo = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
-    if (!expresionCorreo.test(correo)) {
-        mostrarAlerta("Por favor, ingrese un correo electrónico válido.", "error")
-        return
-    }
-    // Validar selección de catálogos obligatorios
-    if (!grado_academico_id) {
-        mostrarAlerta("Debe seleccionar un grado académico.", "error")
-        return
-    }
-    if (!enfermedad_preexistente_id) {
-        mostrarAlerta("Debe seleccionar una enfermedad preexistente.", "error")
+}
+
+// Función que dibuja las filas de la tabla
+function renderizarTabla(datos) {
+    if (datos.length === 0) {
+        tablaBody.innerHTML = `<tr><td colspan="10" style="text-align: center; color: #64748b;">No hay mascotas registradas con este criterio.</td></tr>`
         return
     }
 
-    // --- ENVIAR DATOS A SUPABASE ---
-    const { error } = await supabase
-        .from('pacientes')
-        .insert([{
-            nombres, apellidos, dni, fecha_nacimiento: fecha_nacimiento || null,
-            edad: edad ? parseInt(edad) : null, sexo: sexo || null, celular, correo,
-            direccion: direccion || null, distrito: distrito || null, estado_civil: estado_civil || null,
-            grado_academico_id: parseInt(grado_academico_id),
-            enfermedad_preexistente_id: parseInt(enfermedad_preexistente_id),
-            cuenta_seguro, tipo_seguro: tipo_seguro || null, observaciones: observaciones || null
-        }])
+    tablaBody.innerHTML = ''
+    datos.forEach(m => {
+        tablaBody.innerHTML += `
+            <tr>
+                <td><strong>${m.nombre_mascota}</strong></td>
+                <td>${m.edad_mascota !== null ? m.edad_mascota + ' años' : '---'}</td>
+                <td>${m.peso !== null ? m.peso + ' kg' : '---'}</td>
+                <td>${m.nombre_dueno} ${m.apellido_dueno}</td>
+                <td>${m.dni_dueno}</td>
+                <td>${m.celular}</td>
+                <td>${m.especies ? m.especies.nombre : '---'}</td>
+                <td>${m.razas ? m.razas.nombre : '---'}</td>
+                <td>${m.tipos_atencion ? m.tipos_atencion.nombre : '---'}</td>
+                <td>${m.condiciones_medicas ? m.condiciones_medicas.nombre : '---'}</td>
+            </tr>
+        `
+    })
+}
 
-    // --- RESPUESTA DE CONFIRMACIÓN O ERROR ---
-    if (error) {
-        console.error(error)
-        // Manejar el caso de DNI repetido (Código de error PostgreSQL '23505' es para violación de llave única)
-        if (error.code === '23505') {
-            mostrarAlerta("Usuario ya registrado", "error")
-        } else {
-            mostrarAlerta("No se pudo registrar el paciente. Verifique los datos ingresados.", "error")
-        }
+// Escuchador del Filtro por Especie (Rúbrica Examen)
+filtroEspecie.addEventListener('change', (e) => {
+    const seleccion = e.target.value
+    if (seleccion === "TODOS") {
+        renderizarTabla(listaMascotasGlobal)
     } else {
-        mostrarAlerta("Paciente registrado correctamente", "success")
-        formulario.reset() // Limpiar el formulario tras el éxito
+        // En Supabase, filtramos basándonos en la relación cargada o el ID original guardado en el objeto
+        // Para simplificar, como hicimos un GET completo, lo filtramos directamente en la respuesta guardada
+        // lsyvtohbhrgzmqtvuqop guarda la relación en el objeto de respuesta del select
+        cargarMascotasConFiltroBase(seleccion)
     }
 })
+
+async function cargarMascotasConFiltroBase(especieId) {
+    try {
+        const { data: mascotas, error } = await supabase
+            .from('mascotas')
+            .select(`
+                id, nombre_mascota, edad_mascota, peso, nombre_dueno, apellido_dueno, dni_dueno, celular, correo, observaciones,
+                especies (nombre),
+                razas (nombre),
+                tipos_atencion (nombre),
+                condiciones_medicas (nombre)
+            `)
+            .eq('especie_id', parseInt(especieId))
+            .order('created_at', { ascending: false })
+
+        if (error) throw error
+        renderizarTabla(mascotas)
+    } catch (err) {
+        console.error(err)
+    }
+}
+
+// 3. Procesar Envío del Formulario y ejecutar Validaciones estrictas de la rúbrica
+formulario.addEventListener('submit', async (e) => {
+    e.preventDefault()
+    mensajeAlerta.style.display = 'none'
+
+    // Capturar inputs
+    const nombre_mascota = document.getElementById('nombre_mascota').value.trim()
+    const edad_mascota = document.getElementById('edad_mascota').value
+    const peso = document.getElementById('peso').value
+    const nombre_dueno = document.getElementById('nombre_dueno').value.trim()
+    const apellido_dueno = document.getElementById('apellido_dueno').value.trim()
+    const dni_dueno = document.getElementById('dni_dueno').value.trim()
+    const celular = document.getElementById('celular').value.trim()
+    const correo = document.getElementById('correo').value.trim()
+    const especie_id = selectEspecie.value
+    const raza_id = selectRaza.value
+    const tipo_atencion_id = selectAtencion.value
+    const condicion_medica_id = selectCondicion.value
+    const observaciones = document.getElementById('observaciones').value.trim()
+
+    // --- BLOQUE DE VALIDACIONES DE LA RÚBRICA ---
+    // Validación: No enviar formulario vacío
+    if (!nombre_mascota && !nombre_dueno && !apellido_dueno && !dni_dueno && !celular && !correo) {
+        lanzarAlerta("No se puede enviar el formulario vacío.", "error")
+        return
+    }
+    // Validación: Nombres y apellidos obligatorios
+    if (!nombre_mascota || !nombre_dueno || !apellido_dueno) {
+        lanzarAlerta("El nombre de la mascota, nombres y apellidos del dueño no pueden estar vacíos.", "error")
+        return
+    }
+    // Validación: DNI exacto de 8 dígitos
+    if (dni_dueno.length !== 8 || isNaN(dni_dueno)) {
+        lanzarAlerta("El DNI del dueño debe tener exactamente 8 dígitos.", "error")
+        return
+    }
+    // Validación: Correo electrónico válido
+    const patronCorreo = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+    if (!patronCorreo.test(correo)) {
+        lanzarAlerta("Por favor, ingrese un correo electrónico válido.", "error")
+        return
+    }
+    // Validación: Celular mínimo 9 dígitos
+    if (celular.length < 9 || isNaN(celular)) {
+        lanzarAlerta("El celular debe tener como mínimo 9 dígitos.", "error")
+        return
+    }
+    // Validación: Selects obligatorios seleccionados
+    if (!especie_id) { lanzarAlerta("Debe seleccionar una especie.", "error"); return }
+    if (!raza_id) { lanzarAlerta("Debe seleccionar una raza.", "error"); return }
+    if (!tipo_atencion_id) { lanzarAlerta("Debe seleccionar un tipo de atención.", "error"); return }
+    if (!condicion_medica_id) { lanzarAlerta("Debe seleccionar una condición médica.", "error"); return }
+
+    // --- GUARDAR REGISTRO EN LA TABLA PRINCIPAL 'mascotas' ---
+    const { error } = await supabase
+        .from('mascotas')
+        .insert([{
+            nombre_mascota,
+            edad_mascota: edad_mascota ? parseInt(edad_mascota) : null,
+            peso: peso ? parseFloat(peso) : null,
+            nombre_dueno,
+            apellido_dueno,
+            dni_dueno,
+            celular,
+            correo,
+            especie_id: parseInt(especie_id),
+            raza_id: parseInt(raza_id),
+            tipo_atencion_id: parseInt(tipo_atencion_id),
+            condicion_medica_id: parseInt(condicion_medica_id),
+            observaciones: observaciones || null
+        }])
+
+    // --- MANEJO DE RESPUESTAS EXIGIDAS EN LA RÚBRICA ---
+    if (error) {
+        if (error.code === '23505') { // Código de error de clave duplicada en PostgreSQL/Supabase
+            lanzarAlerta("Usuario ya registrado", "error")
+        } else {
+            lanzarAlerta("No se pudo registrar el paciente. Verifique los datos ingresados.", "error")
+        }
+    } else {
+        lanzarAlerta("Paciente registrado correctamente", "success")
+        formulario.reset()
+        // Recargar la tabla automáticamente para reflejar la nueva mascota registrada
+        cargarListadoMascotas()
+    }
+})
+
+// Ejecución inicial al cargar la página web
+iniciarCatalogos()
+cargarListadoMascotas()
